@@ -72,6 +72,8 @@ jobs:
             chown -R builduser:builduser /build/custom-archiso
             cd /build/custom-archiso
 
+            sed -i '/\[community\]/,/Include/s/^#//' pacman.conf
+
             # Update mirrorlist for the custom profile
             reflector --latest 20 --sort rate --protocol https --save /build/custom-archiso/airootfs/etc/pacman.d/mirrorlist
             pacman -Syu --noconfirm
