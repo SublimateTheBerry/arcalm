@@ -1,146 +1,81 @@
-name: Arcalm Linux Builder
+name: Build Arcalm ISO with Calamares
 
 on:
-  workflow_dispatch:
-  schedule:
-    - cron: '0 0 */3 * *'
+  push:
+    branches:
+      - main
 
 jobs:
-  check-version:
-    runs-on: ubuntu-latest
-    outputs:
-      new_version: ${{ steps.check.outputs.new_version }}
-      arch_version: ${{ steps.get_version.outputs.version }}
-    steps:
-      - name: Get ISO version
-        id: get_version
-        run: |
-          curl -sL https://mirrors.edge.kernel.org/archlinux/iso/latest/sha256sums.txt -o sha256sums.txt
-          ISO_NAME=$(grep -oP 'archlinux-\K\d{4}\.\d{2}\.\d{2}(?=-x86_64.iso)' sha256sums.txt | head -1)
-          echo "version=${ISO_NAME}" >> $GITHUB_OUTPUT
-
-      - name: Check releases
-        id: check
-        run: |
-          API_RESPONSE=$(curl -sfH "Authorization: token ${{ secrets.GITHUB_TOKEN }}" "https://api.github.com/repos/${{ github.repository }}/releases/latest" || echo 'null')
-          LATEST_RELEASE_TAG=$(jq -r .tag_name <<< "$API_RESPONSE")
-          CURRENT_VERSION="${{ steps.get_version.outputs.version }}"
-
-          if [[ "$API_RESPONSE" == 'null' ]] || [[ "$LATEST_RELEASE_TAG" != "$CURRENT_VERSION" ]]; then
-            echo "new_version=true" >> $GITHUB_OUTPUT
-          else
-            echo "new_version=false" >> $GITHUB_OUTPUT
-          fi
-
-  build-and-release:
-    needs: check-version
-    if: needs.check-version.outputs.new_version == 'true'
+  build:
     runs-on: ubuntu-latest
     container:
       image: archlinux:latest
-      options: --privileged
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
 
+    steps:
       - name: Install dependencies
         run: |
           pacman -Syu --noconfirm
-          pacman -S --noconfirm base-devel git archiso sudo rsync reflector jq
+          pacman -S --noconfirm git base-devel archiso cmake extra-cmake-modules \
+            yaml-cpp hwinfo efibootmgr gtk-update-icon-cache libpwquality squashfs-tools \
+            rsync mtools xorriso mkinitcpio-nfs-utils dosfstools grub python-qt5 qt5-tools \
+            qt5-svg qt5-xmlpatterns qt5-base qt5-declarative qt5-quickcontrols qt5-graphicaleffects \
+            qt5-webengine qt5-webchannel qt5-location qt5-sensors qt5-tools qt5-translations \
+            qt5-websockets qt5-x11extras qt5-imageformats qt5-multimedia qt5-serialport \
+            kpmcore qt6-base
 
-          useradd -m -G wheel builduser
-          echo 'builduser ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
-          mkdir -p /build /work /out /aurbuild
-          chown -R builduser:builduser /build /work /out /aurbuild
-
-      - name: Build Calamares from AUR
+      - name: Create build user
         run: |
+          useradd -m builduser
+          echo "builduser ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+          mkdir -p /home/builduser/.gnupg
+          chown -R builduser:builduser /home/builduser
+
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Clone Calamares and build it
+        run: |
+          git clone --branch calamares-3.3 https://github.com/calamares/calamares.git /home/builduser/calamares
+          chown -R builduser:builduser /home/builduser/calamares
           sudo -u builduser bash -c '
-            cd /aurbuild
-            git clone https://aur.archlinux.org/calamares.git
-            cd calamares
-            makepkg -si --noconfirm --needed
+            cd /home/builduser/calamares && mkdir -p build && cd build
+            cmake .. -DCMAKE_INSTALL_PREFIX=/usr
+            make -j$(nproc)
+            sudo make install
           '
 
-      - name: Create local Pacman repo with Calamares
+      - name: Prepare ISO build environment
         run: |
-          mkdir -p /localrepo
-          cp /aurbuild/calamares/*.pkg.tar.zst /localrepo/
-          repo-add /localrepo/custom.db.tar.gz /localrepo/*.pkg.tar.zst
+          cp -r /usr/share/archiso/configs/releng/ arcalmiso
+          cd arcalmiso
+          sed -i 's|Arch Linux|arcalm|g' ./airootfs/etc/issue
+          sed -i 's|Arch Linux|arcalm|g' ./airootfs/etc/motd
+          sed -i 's|Arch Linux|arcalm|g' ./airootfs/etc/os-release
+          echo 'arcalm' > ./airootfs/etc/hostname
 
-      - name: Prepare ISO build
-        run: |
-          cp -r /usr/share/archiso/configs/releng /build/custom-archiso
-          chown -R builduser:builduser /build/custom-archiso
+          # Create autostart file for Calamares
+          mkdir -p ./airootfs/etc/skel/.config/autostart
+          cat <<EOF > ./airootfs/etc/skel/.config/autostart/calamares.desktop
+          [Desktop Entry]
+          Type=Application
+          Name=Calamares Installer
+          Exec=calamares
+          Icon=calamares
+          X-GNOME-Autostart-enabled=true
+          EOF
 
-          # Add local repo to pacman.conf
-          echo -e '\n[custom]\nSigLevel = Optional TrustAll\nServer = file:///localrepo' >> /build/custom-archiso/pacman.conf
 
-          reflector --latest 20 --sort rate --protocol http,https --save /build/custom-archiso/airootfs/etc/pacman.d/mirrorlist
-
-          # Add Calamares and KDE apps
-          echo "
-          calamares
-          qt5-xmlpatterns
-          kpmcore
-          plasma-meta
-          kde-applications
-          networkmanager
-          grub
-          efibootmgr
-          xdg-desktop-portal-kde
-          " >> /build/custom-archiso/packages.x86_64
-
-      - name: Add branding and customization
-        run: |
-          sudo -u builduser bash -c '
-            cd /build/custom-archiso
-
-            # Замена названия дистрибутива
-            find . -type f -exec sed -i -e "s/Arch Linux/Arcalm Linux/g" {} \;
-            find . -type f -exec sed -i -e "s/archlinux/arcalm/g" {} \;
-            find . -type f -exec sed -i -e "s/ARCH_/ARCALM_/g" {} \;
-
-            # Копирование Calamares-конфигов
-            mkdir -p airootfs/etc/calamares
-            cp -rv /__w/arcalm/arcalm/calamares/* airootfs/etc/calamares/
-
-            # Добавление скрипта кастомизации
-            mkdir -p airootfs/root
-            cp -v /__w/arcalm/arcalm/airootfs/root/customize_airootfs.sh airootfs/root/ || true
-            chmod +x airootfs/root/customize_airootfs.sh
-
-            # Изменение имени ISO
-            echo "MKISOFS_ARGS=\"-V ARCALM_$(date +%Y%m%d)\"" >> config.sh
-          '
+          mkdir -p ./airootfs/etc/calamares/branding/arcalm
+          cp /home/builduser/calamares/calamares/settings.conf ./airootfs/etc/calamares/
+          cp /home/builduser/calamares/calamares/branding/example/branding.desc ./airootfs/etc/calamares/branding/arcalm/
 
       - name: Build ISO
         run: |
-          mkarchiso -v -w /work -o /out /build/custom-archiso
-          echo "ISO_FILE=$(ls /out/*.iso)" >> $GITHUB_ENV
+          cd arcalmiso
+          mkarchiso -v . out
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
+      - name: Upload ISO artifact
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: "v${{ needs.check-version.outputs.arch_version }}"
-          name: "Arcalm Linux ${{ needs.check-version.outputs.arch_version }}"
-          body: "Custom Arch-based Linux with Calamares installer\n\nBuilt with Plasma Desktop and KDE Applications"
-          files: ${{ env.ISO_FILE }}
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Cleanup old releases
-        if: success()
-        run: |
-          mapfile -t releases < <(
-            curl -sH "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-              "https://api.github.com/repos/${{ github.repository }}/releases?per_page=100" | jq -r '.[].id'
-          )
-          if [ "${#releases[@]}" -gt 3 ]; then
-            for release_id in "${releases[@]:3}"; do
-              curl -X DELETE -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-                "https://api.github.com/repos/${{ github.repository }}/releases/$release_id"
-            done
-          fi
+          name: arcalm-linux-iso
+          path: arcalmiso/out/*.iso
