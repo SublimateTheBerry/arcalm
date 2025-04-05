@@ -61,6 +61,7 @@ jobs:
           pacman -Syu --noconfirm
           pacman -S --noconfirm archiso base-devel git reflector rsync sudo jq
           useradd -m -G wheel builduser
+          echo 'builduser ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
           mkdir -p /build /work /out
           chown -R builduser:builduser /build /work /out
 
@@ -73,9 +74,12 @@ jobs:
             # Обновление зеркал
             reflector --country Russia --latest 10 --sort rate --save /etc/pacman.d/mirrorlist
             
-            # Добавление extra в pacman.conf
+            # Добавление репозитория extra
             echo "[extra]" >> /etc/pacman.conf
             echo "Include = /etc/pacman.d/mirrorlist" >> /etc/pacman.conf
+            
+            # Обновление баз пакетов
+            sudo pacman -Sy --noconfirm
             
             # Замена брендинга
             find . -type f -exec sed -i -e "s/Arch Linux/Arcalm Linux/g" {} \;
@@ -92,6 +96,7 @@ jobs:
             echo "grub" >> packages.x86_64
             echo "efibootmgr" >> packages.x86_64
             echo "xdg-desktop-portal-kde" >> packages.x86_64
+            echo "lib32-gcc-libs" >> packages.x86_64
             
             # Копирование конфигов
             mkdir -p airootfs/etc/calamares
