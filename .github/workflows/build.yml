@@ -35,8 +35,7 @@ jobs:
 
       - name: Clone Calamares and build it
         run: |
-          # Use official release tag instead of non-existent branch
-          git clone https://github.com/calamares/calamares.git /home/builduser/calamares
+          git clone --depth 1 --branch 3.2.x-stable https://github.com/calamares/calamares.git /home/builduser/calamares
           chown -R builduser:builduser /home/builduser/calamares
           sudo -u builduser bash -c '
             cd /home/builduser/calamares && mkdir -p build && cd build
