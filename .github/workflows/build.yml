@@ -51,9 +51,9 @@ jobs:
     - name: Verify repository structure
       run: |
         echo "Workspace content:"
-        ls -la /github/workspace
+        ls -la .
         echo "Calamares configs:"
-        ls -la /github/workspace/calamares
+        ls -la calamares
 
     - name: Setup environment
       run: |
