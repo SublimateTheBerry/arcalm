@@ -87,8 +87,8 @@ jobs:
 
         # Copy post-install script
         mkdir -p airootfs/root
-        if [ -f "/github/workspace/airootfs/root/customize_airootfs.sh" ]; then
-          cp -v /github/workspace/airootfs/root/customize_airootfs.sh airootfs/root/
+        if [ -f "airootfs/root/customize_airootfs.sh" ]; then
+          cp -v airootfs/root/customize_airootfs.sh airootfs/root/
           chmod +x airootfs/root/customize_airootfs.sh
         else
           echo "::warning::Customize script not found, skipping"
