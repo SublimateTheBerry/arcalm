@@ -23,6 +23,10 @@ jobs:
             qt5-websockets qt5-x11extras qt5-imageformats qt5-multimedia qt5-serialport \
             kpmcore qt6-base python-pyqt5 polkit-qt5 kcoreaddons kconfig ki18n
 
+      - name: Check CMake version
+        run: |
+          cmake --version
+
       - name: Create build user
         run: |
           useradd -m builduser
