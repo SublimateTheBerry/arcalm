@@ -67,19 +67,24 @@ jobs:
 
       - name: Prepare ISO config
         run: |
-          sudo -u builduser sh -c '
+          sudo sh -c '
             cp -r /usr/share/archiso/configs/releng /build/custom-archiso
             cd /build/custom-archiso
-            
-            # Обновление зеркал
-            reflector --country Russia --latest 10 --sort rate --save /etc/pacman.d/mirrorlist
             
             # Добавление репозитория extra
             echo "[extra]" >> /etc/pacman.conf
             echo "Include = /etc/pacman.d/mirrorlist" >> /etc/pacman.conf
             
             # Обновление баз пакетов
-            sudo pacman -Sy --noconfirm
+            pacman -Sy --noconfirm
+            
+            # Обновление зеркал
+            reflector --country Russia --latest 10 --sort rate --save /etc/pacman.d/mirrorlist
+          '
+          
+          # Остальные настройки от пользователя builduser
+          sudo -u builduser sh -c '
+            cd /build/custom-archiso
             
             # Замена брендинга
             find . -type f -exec sed -i -e "s/Arch Linux/Arcalm Linux/g" {} \;
@@ -96,13 +101,12 @@ jobs:
             echo "grub" >> packages.x86_64
             echo "efibootmgr" >> packages.x86_64
             echo "xdg-desktop-portal-kde" >> packages.x86_64
-            echo "lib32-gcc-libs" >> packages.x86_64
             
-            # Копирование конфигов
+            # Копирование конфигов Calamares
             mkdir -p airootfs/etc/calamares
             cp -rv "/__w/arcalm/arcalm/calamares"/* airootfs/etc/calamares/ || { echo "Calamares config not found"; exit 1; }
             
-            # Кастомный скрипт
+            # Добавление скрипта
             mkdir -p airootfs/root
             cp -v "/__w/arcalm/arcalm/airootfs/root/customize_airootfs.sh" airootfs/root/ || true
             chmod +x airootfs/root/customize_airootfs.sh
