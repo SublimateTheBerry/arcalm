@@ -24,8 +24,8 @@ jobs:
             kpmcore qt6-base python-pyqt5 polkit-qt5 kcoreaddons kconfig ki18n wget
             sudo pacman -S --noconfirm \
               git cmake extra-cmake-modules \
-              kf5-kcoreaddons kf5-kcrash kf5-kdbusaddons \
-              kf5-ki18n kf5-kwidgetsaddons yaml-cpp \
+              kcoreaddons kcrash kdbusaddons \
+              ki18n kwidgetsaddons yaml-cpp \
               gettext boost python python-pip \
               python-jsonschema python-yaml
 
