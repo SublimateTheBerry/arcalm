@@ -27,7 +27,8 @@ jobs:
               kcoreaddons kcrash kdbusaddons \
               ki18n kwidgetsaddons yaml-cpp \
               gettext boost python python-pip \
-              python-jsonschema python-yaml
+              python-jsonschema python-yaml \
+              ckbcomp mkinitcpio-openswap
 
       - name: Upgrade CMake
         run: |
