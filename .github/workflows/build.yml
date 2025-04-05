@@ -69,6 +69,12 @@ jobs:
           cp -r /usr/share/archiso/configs/releng /build/custom-archiso
           cd /build/custom-archiso
 
+          # Используем оригинальный pacman.conf
+          cp /usr/share/archiso/configs/releng/pacman.conf pacman.conf
+
+          # Обновляем зеркала
+          echo "Server = https://mirror.archlinux.cn/\$repo/os/\$arch" > /etc/pacman.d/mirrorlist
+
           # Замена брендинга
           find . -type f -exec sed -i \
             -e 's/Arch Linux/Arcalm Linux/g' \
@@ -77,14 +83,6 @@ jobs:
 
           # Добавление пакетов
           echo -e "calamares\nqt5-xmlpatterns\nkpmcore\nxorg-xinit\nsddm\nplasma-meta\nkde-applications-meta\nnetworkmanager\ngrub\nefibootmgr\nxdg-desktop-portal-kde" >> packages.x86_64
-
-          # Обновление pacman.conf
-          echo "[core]
-          Include = /etc/pacman.d/mirrorlist
-          [extra]
-          Include = /etc/pacman.d/mirrorlist
-          [community]
-          Include = /etc/pacman.d/mirrorlist" >> pacman.conf
 
           # Копирование конфигов Calamares
           mkdir -p airootfs/etc/calamares
