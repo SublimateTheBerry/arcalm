@@ -12,28 +12,27 @@ jobs:
       new_version: ${{ steps.check.outputs.new_version }}
       arch_version: ${{ steps.get_version.outputs.version }}
     steps:
-    - name: Get ISO version
-      id: get_version
-      run: |
-        curl -sL https://mirrors.edge.kernel.org/archlinux/iso/latest/sha256sums.txt -o sha256sums.txt
-        ISO_NAME=$(grep -oP 'archlinux-\K\d{4}\.\d{2}\.\d{2}(?=-x86_64.iso)' sha256sums.txt | head -1)
-        echo "version=$ISO_NAME" >> $GITHUB_OUTPUT
+      - name: Get ISO version
+        id: get_version
+        run: |
+          curl -sL https://mirrors.edge.kernel.org/archlinux/iso/latest/sha256sums.txt -o sha256sums.txt
+          ISO_NAME=$(grep -oP 'archlinux-\K\d{4}\.\d{2}\.\d{2}(?=-x86_64.iso)' sha256sums.txt | head -1)
+          echo "version=$ISO_NAME" >> $GITHUB_OUTPUT
 
-    - name: Check releases
-      id: check
-      run: |
-        API_RESPONSE=$(curl -sfH "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-          "https://api.github.com/repos/${{ github.repository }}/releases/latest" || echo 'null')
-        LATEST_RELEASE_TAG=$(jq -r .tag_name <<< "$API_RESPONSE")
-        CURRENT_VERSION="${{ steps.get_version.outputs.version }}"
+      - name: Check releases
+        id: check
+        run: |
+          API_RESPONSE=$(curl -sfH "Authorization: token ${{ secrets.GITHUB_TOKEN }}" "https://api.github.com/repos/${{ github.repository }}/releases/latest" || echo 'null')
+          LATEST_RELEASE_TAG=$(jq -r .tag_name <<< "$API_RESPONSE")
+          CURRENT_VERSION="${{ steps.get_version.outputs.version }}"
 
-        if [[ "$LATEST_RELEASE_TAG" != "$CURRENT_VERSION" ]] || [[ "$API_RESPONSE" == 'null' ]]; then
-          echo "new_version=true" >> $GITHUB_OUTPUT
-          echo "::notice::New version detected: $CURRENT_VERSION"
-        else
-          echo "new_version=false" >> $GITHUB_OUTPUT
-          echo "::notice::No new version available"
-        fi
+          if [[ "$LATEST_RELEASE_TAG" != "$CURRENT_VERSION" ]] || [[ "$API_RESPONSE" == 'null' ]]; then
+            echo "new_version=true" >> $GITHUB_OUTPUT
+            echo "::notice::New version detected: $CURRENT_VERSION"
+          else
+            echo "new_version=false" >> $GITHUB_OUTPUT
+            echo "::notice::No new version available"
+          fi
 
   build-and-release:
     needs: check-version
@@ -43,80 +42,92 @@ jobs:
       image: archlinux:latest
       options: --privileged
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Verify repository structure
-      run: |
-        echo "Workspace content:"
-        ls -la .
-        echo "Calamares configs:"
-        ls -la calamares
-        echo "Checking Calamares path:"
-        ls -la /__w/arcalm/arcalm/calamares
+      - name: Verify repository structure
+        run: |
+          echo "Workspace content:"
+          ls -la .
+          echo "Calamares configs:"
+          ls -la calamares
+          echo "Checking paths:"
+          echo "Calamares directory: $(realpath calamares)"
+          echo "customize_airootfs.sh path: $(realpath airootfs/root/customize_airootfs.sh)"
 
-    - name: Setup environment
-      run: |
-        pacman -Sy --noconfirm archiso sudo git base-devel jq
-        useradd builduser
-        mkdir -p /build /work /out
-        chown -R builduser:builduser /build /work /out
+      - name: Setup environment
+        run: |
+          pacman -Sy --noconfirm archiso sudo git base-devel jq
+          useradd builduser
+          mkdir -p /build /work /out
+          chown -R builduser:builduser /build /work /out
 
-    - name: Prepare ISO config
-      run: |
-        cp -r /usr/share/archiso/configs/releng /build/custom-archiso
-        cd /build/custom-archiso
+      - name: Prepare ISO config
+        run: |
+          # Копируем базовую конфигурацию releng
+          cp -r /usr/share/archiso/configs/releng /build/custom-archiso
+          cd /build/custom-archiso
 
-        # Исправленная команда find
-        find . -type f -exec sed -i -e 's/Arch Linux/Arcalm Linux/g' -e 's/archlinux/arcalm/g' -e 's/ARCH_/ARCALM_/g' {} \;
+          # Замена брендинга
+          find . -type f -exec sed -i \
+            -e 's/Arch Linux/Arcalm Linux/g' \
+            -e 's/archlinux/arcalm/g' \
+            -e 's/ARCH_/ARCALM_/g' {} \;
 
-        # Исправленный путь к calamares
-        mkdir -p airootfs/etc/calamares
-        if [ -d "/__w/arcalm/arcalm/calamares" ]; then
-          cp -rv "/__w/arcalm/arcalm/calamares"/* airootfs/etc/calamares/
-        else
-          echo "::error::Missing Calamares config directory!"
-          exit 1
-        fi
+          # Добавление пакетов
+          echo -e "calamares\nqt5-xmlpatterns\nkpmcore\nxorg-xinit\nsddm\nplasma-meta\nkde-applications-meta\nnetworkmanager\ngrub\nefibootmgr\nxdg-desktop-portal-kde" >> packages.x86_64
 
-        # Copy post-install script
-        mkdir -p airootfs/root
-        if [ -f "/__w/arcalm/arcalm/airootfs/root/customize_airootfs.sh" ]; then
-          cp -v "/__w/arcalm/arcalm/airootfs/root/customize_airootfs.sh" airootfs/root/
-          chmod +x airootfs/root/customize_airootfs.sh
-        else
-          echo "::warning::Customize script not found, skipping"
-        fi
+          # Копирование конфигов Calamares
+          mkdir -p airootfs/etc/calamares
+          if [ -d "/__w/arcalm/arcalm/calamares" ]; then
+            cp -rv "/__w/arcalm/arcalm/calamares"/* airootfs/etc/calamares/
+          else
+            echo "::error::Missing Calamares config directory!"
+            exit 1
+          fi
 
-    - name: Build ISO
-      run: |
-        mkarchiso -v -w /work -o /out /build/custom-archiso
-        ISO_FILE=$(ls /out/*.iso)
-        echo "ISO_FILE=$ISO_FILE" >> $GITHUB_ENV
+          # Копирование скрипта customize_airootfs.sh
+          mkdir -p airootfs/root
+          if [ -f "/__w/arcalm/arcalm/airootfs/root/customize_airootfs.sh" ]; then
+            cp -v "/__w/arcalm/arcalm/airootfs/root/customize_airootfs.sh" airootfs/root/
+            chmod +x airootfs/root/customize_airootfs.sh
+          else
+            echo "::warning::Customize script not found, skipping"
+          fi
 
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
-      with:
-        tag_name: ${{ needs.check-version.outputs.arch_version }}
-        name: "Arcalm Linux ${{ needs.check-version.outputs.arch_version }}"
-        body: "Custom Arch-based Linux with Calamares installer"
-        files: ${{ env.ISO_FILE }}
-        draft: false
-        prerelease: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Важно! Исправление путей для mkarchiso
+          echo "MKISOFS_ARGS=\"-V ARCALM_$(date +%Y.%m.%d)\"" >> config.sh
 
-    - name: Cleanup old releases
-      if: success()
-      run: |
-        mapfile -t releases < <(curl -sH "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-          "https://api.github.com/repos/${{ github.repository }}/releases?per_page=100" | jq -r '.[].id')
-        
-        if [ "${#releases[@]}" -gt 3 ]; then
-          for release_id in "${releases[@]:3}"; do
-            curl -X DELETE -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-              "https://api.github.com/repos/${{ github.repository }}/releases/$release_id"
-          done
-        fi
+      - name: Build ISO
+        run: |
+          mkarchiso -v -w /work -o /out /build/custom-archiso
+          ISO_FILE=$(ls /out/*.iso)
+          echo "ISO_FILE=$ISO_FILE" >> $GITHUB_ENV
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.check-version.outputs.arch_version }}
+          name: "Arcalm Linux ${{ needs.check-version.outputs.arch_version }}"
+          body: "Custom Arch-based Linux with Calamares installer"
+          files: ${{ env.ISO_FILE }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cleanup old releases
+        if: success()
+        run: |
+          mapfile -t releases < <(
+            curl -sH "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/releases?per_page=100" | jq -r '.[].id'
+          )
+          if [ "${#releases[@]}" -gt 3 ]; then
+            for release_id in "${releases[@]:3}"; do
+              curl -X DELETE -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                "https://api.github.com/repos/${{ github.repository }}/releases/$release_id"
+            done
+          fi
