@@ -1,0 +1,97 @@
+name: Arcalm Linux Builder
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 */3 * *'
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.check.outputs.new_version }}
+      arch_version: ${{ steps.get_version.outputs.version }}
+    steps:
+    - name: Get ISO version
+      id: get_version
+      run: |
+        curl -sL https://mirrors.edge.kernel.org/archlinux/iso/latest/sha256sums.txt -o sha256sums.txt
+        ISO_NAME=$(grep -oP 'archlinux-\K\d{4}\.\d{2}\.\d{2}(?=-x86_64.iso)' sha256sums.txt | head -1)
+        echo "version=$ISO_NAME" >> $GITHUB_OUTPUT
+
+    - name: Check releases
+      id: check
+      run: |
+        API_RESPONSE=$(curl -sfH "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          "https://api.github.com/repos/${{ github.repository }}/releases/latest" || echo 'null')
+        LATEST_RELEASE_TAG=$(jq -r .tag_name <<< "$API_RESPONSE")
+        CURRENT_VERSION="${{ steps.get_version.outputs.version }}"
+
+        if [[ "$LATEST_RELEASE_TAG" != "$CURRENT_VERSION" ]] || [[ "$API_RESPONSE" == 'null' ]]; then
+          echo "new_version=true" >> $GITHUB_OUTPUT
+          echo "::notice::New version detected: $CURRENT_VERSION"
+        else
+          echo "new_version=false" >> $GITHUB_OUTPUT
+          echo "::notice::No new version available"
+        fi
+
+  build-and-release:
+    needs: check-version
+    if: needs.check-version.outputs.new_version == 'true'
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+      options: --privileged
+    steps:
+    - name: Setup environment
+      run: |
+        pacman -Sy --noconfirm archiso sudo git base-devel jq
+        useradd builduser
+        mkdir -p /build /work /out
+        chown -R builduser:builduser /build /work /out
+
+    - name: Prepare ISO config
+      run: |
+        cp -r /usr/share/archiso/configs/releng /build/custom-archiso
+        cd /build/custom-archiso
+
+        # Branding replacement
+        find . -type f -exec sed -i 's/Arch Linux/Arcalm Linux/g;s/archlinux/arcalm/g;s/ARCH_/ARCALM_/g' {} \;
+
+        # Add packages
+        echo -e "calamares\nqt5-xmlpatterns\nkpmcore\nxorg-xinit\nsddm\nplasma-meta\nkde-applications-meta\nnetworkmanager\ngrub\nefibootmgr" >> packages.x86_64
+
+        # Copy configurations
+        mkdir -p airootfs/etc/calamares
+        cp -r /github/workspace/calamares/* airootfs/etc/calamares/
+        cp /github/workspace/airootfs/root/customize_airootfs.sh airootfs/root/
+        chmod +x airootfs/root/customize_airootfs.sh
+
+    - name: Build ISO
+      run: |
+        mkarchiso -v -w /work -o /out /build/custom-archiso
+        ISO_FILE=$(ls /out/*.iso)
+        echo "ISO_FILE=$ISO_FILE" >> $GITHUB_ENV
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ needs.check-version.outputs.arch_version }}
+        name: "Arcalm Linux ${{ needs.check-version.outputs.arch_version }}"
+        body: "Custom Arch-based Linux with Calamares installer"
+        files: ${{ env.ISO_FILE }}
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Cleanup old releases
+      if: success()
+      run: |
+        releases=($(curl -sH "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          "https://api.github.com/repos/${{ github.repository }}/releases?per_page=100" | jq -r '.[].id'))
+        
+        for release_id in "${releases[@]:3}"; do
+          curl -X DELETE -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/$release_id"
+        done

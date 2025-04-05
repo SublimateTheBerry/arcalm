@@ -1,0 +1,9 @@
+componentName:  Arcalm Linux
+shortName:      arcalm
+version:        1.0
+shortVersion:   1.0
+bootloaderEntryName: Arcalm
+productName:    Arcalm Linux
+productUrl:     https://github.com/SublimateTheBerry/arcalm
+supportUrl:     https://github.com/SublimateTheBerry/arcalm/issues
+releaseNotesUrl: CHANGELOG
