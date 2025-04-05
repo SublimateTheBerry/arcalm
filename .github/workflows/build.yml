@@ -69,19 +69,13 @@ jobs:
         cp -r /usr/share/archiso/configs/releng /build/custom-archiso
         cd /build/custom-archiso
 
-        # Replace branding
-        find . -type f -exec sed -i \
-          -e 's/Arch Linux/Arcalm Linux/g' \
-          -e 's/archlinux/arcalm/g' \
-          -e 's/ARCH_/ARCALM_/g' {} \;
+        # Исправленная команда find
+        find . -type f -exec sed -i -e 's/Arch Linux/Arcalm Linux/g' -e 's/archlinux/arcalm/g' -e 's/ARCH_/ARCALM_/g' {} \;
 
-        # Add required packages
-        echo -e "calamares\nqt5-xmlpatterns\nkpmcore\nxorg-xinit\nsddm\nplasma-meta\nkde-applications-meta\nnetworkmanager\ngrub\nefibootmgr" >> packages.x86_64
-
-        # Copy Calamares configs
+        # Исправленный путь к calamares
         mkdir -p airootfs/etc/calamares
         if [ -d "/__w/arcalm/arcalm/calamares" ]; then
-          cp -rv /__w/arcalm/arcalm/calamares/* airootfs/etc/calamares/
+          cp -rv "/__w/arcalm/arcalm/calamares"/* airootfs/etc/calamares/
         else
           echo "::error::Missing Calamares config directory!"
           exit 1
@@ -90,7 +84,7 @@ jobs:
         # Copy post-install script
         mkdir -p airootfs/root
         if [ -f "/__w/arcalm/arcalm/airootfs/root/customize_airootfs.sh" ]; then
-          cp -v /__w/arcalm/arcalm/airootfs/root/customize_airootfs.sh" airootfs/root/
+          cp -v "/__w/arcalm/arcalm/airootfs/root/customize_airootfs.sh" airootfs/root/
           chmod +x airootfs/root/customize_airootfs.sh
         else
           echo "::warning::Customize script not found, skipping"
