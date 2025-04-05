@@ -72,10 +72,10 @@ jobs:
             chown -R builduser:builduser /build/custom-archiso
             cd /build/custom-archiso
 
-            sed -i -e "/\[community\]/,/Include/s/^#//" pacman.conf
+            sed -i -e 's|^#\[community\]|\[community\]|' -e '/\[community\]/,/^$/ s|^#||' pacman.conf
 
             echo "Checking pacman.conf syntax..."
-            pacman-conf --config pacman.conf --repo core >/dev/null || { echo "Invalid pacman.conf"; exit 1; }
+            pacman-conf --config pacman.conf --repo community || { echo "Invalid [community] section in pacman.conf"; exit 1; }
 
             # Update mirrorlist for the custom profile
             reflector --latest 20 --sort rate --protocol http,https --save /build/custom-archiso/airootfs/etc/pacman.d/mirrorlist
