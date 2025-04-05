@@ -59,18 +59,35 @@ jobs:
 
       - name: Setup environment
         run: |
-          pacman -Sy --noconfirm archiso sudo git base-devel jq reflector
-          useradd builduser
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm archiso sudo git base-devel jq reflector edk2-ovmf
+          useradd -m builduser
           mkdir -p /build /work /out
           chown -R builduser:builduser /build /work /out
+          echo 'Server = https://mirrors.kernel.org/archlinux/$repo/os/$arch' >> /etc/pacman.d/mirrorlist
 
       - name: Prepare ISO config
         run: |
           cp -r /usr/share/archiso/configs/releng /build/custom-archiso
           cd /build/custom-archiso
 
-          # Генерация mirrorlist через reflector
-          reflector --latest 20 --sort rate --save /etc/pacman.d/mirrorlist
+          # Настройка репозиториев
+          echo "[core]
+CompressXZ = true
+CleanMethod = KeepCurrent
+" > pacman.conf
+
+          echo "[multilib]
+Include = /etc/pacman.d/mirrorlist" >> pacman.conf
+
+          echo "[extra]
+Include = /etc/pacman.d/mirrorlist" >> pacman.conf
+
+          echo "[community]
+Include = /etc/pacman.d/mirrorlist" >> pacman.conf
+
+          # Генерация mirrorlist
+          reflector --latest 20 --sort rate --protocol https --save /etc/pacman.d/mirrorlist
           echo "::notice::Generated mirrorlist with top 20 mirrors"
 
           # Замена брендинга
@@ -80,28 +97,19 @@ jobs:
             -e 's/ARCH_/ARCALM_/g' {} \;
 
           # Добавление пакетов
-          echo -e "calamares\nqt5-xmlpatterns\nkpmcore\nxorg-xinit\nsddm\nplasma-meta\nkde-applications-meta\nnetworkmanager\ngrub\nefibootmgr\nxdg-desktop-portal-kde" >> packages.x86_64
+          echo -e "calamares\nqt5-xmlpatterns\nkpmcore\nxorg-xinit\nsddm\nplasma-meta\nkde-applications-meta\nnetworkmanager\ngrub\nefibootmgr\nxdg-desktop-portal-kde\ncalamares-settings\npartition\nwelcome\nuser\nkeymap" >> packages.x86_64
 
           # Копирование конфигов Calamares
           mkdir -p airootfs/etc/calamares
-          if [ -d "/__w/arcalm/arcalm/calamares" ]; then
-            cp -rv "/__w/arcalm/arcalm/calamares"/* airootfs/etc/calamares/
-          else
-            echo "::error::Missing Calamares config directory!"
-            exit 1
-          fi
+          cp -rv "/__w/arcalm/arcalm/calamares"/* airootfs/etc/calamares/ || { echo "::error::Missing Calamares config directory!"; exit 1; }
 
-          # Копирование скрипта customize_airootfs.sh
+          # Копирование скрипта
           mkdir -p airootfs/root
-          if [ -f "/__w/arcalm/arcalm/airootfs/root/customize_airootfs.sh" ]; then
-            cp -v "/__w/arcalm/arcalm/airootfs/root/customize_airootfs.sh" airootfs/root/
-            chmod +x airootfs/root/customize_airootfs.sh
-          else
-            echo "::warning::Customize script not found, skipping"
-          fi
+          cp -v "/__w/arcalm/arcalm/airootfs/root/customize_airootfs.sh" airootfs/root/ || echo "::warning::Customize script not found, skipping"
+          chmod +x airootfs/root/customize_airootfs.sh
 
           # Настройка метки ISO
-          echo "MKISOFS_ARGS=\"-V ARCALM_$(date +%Y.%m.%d)\"" >> config.sh
+          echo "MKISOFS_ARGS=\"-V ARCALM_$(${DATE:+date +%Y.%m.%d})\"" >> config.sh
 
       - name: Build ISO
         run: |
