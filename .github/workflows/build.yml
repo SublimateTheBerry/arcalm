@@ -74,7 +74,7 @@ jobs:
 
             # Update mirrorlist for the custom profile
             reflector --latest 20 --sort rate --protocol https --save /build/custom-archiso/airootfs/etc/pacman.d/mirrorlist
-            pacman -Sy --noconfirm
+            pacman -Syu --noconfirm
           '
 
           sudo -u builduser sh -c '
