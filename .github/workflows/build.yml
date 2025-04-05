@@ -43,6 +43,19 @@ jobs:
       image: archlinux:latest
       options: --privileged
     steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        ref: main
+
+    - name: Verify repository structure
+      run: |
+        echo "Current directory: $(pwd)"
+        echo "Repository content:"
+        ls -la /__w/${{ github.repository }}
+        echo "Calamares directory content:"
+        ls -la /__w/${{ github.repository }}/calamares
+
     - name: Setup environment
       run: |
         pacman -Sy --noconfirm archiso sudo git base-devel jq
@@ -63,8 +76,8 @@ jobs:
 
         # Copy configurations
         mkdir -p airootfs/etc/calamares
-        cp -r /github/workspace/calamares/* airootfs/etc/calamares/
-        cp /github/workspace/airootfs/root/customize_airootfs.sh airootfs/root/
+        cp -r /__w/${{ github.repository }}/calamares/* airootfs/etc/calamares/ || (echo "Calamares files not found!"; exit 1)
+        cp /__w/${{ github.repository }}/airootfs/root/customize_airootfs.sh airootfs/root/ || (echo "customize_airootfs.sh not found!"; exit 1)
         chmod +x airootfs/root/customize_airootfs.sh
 
     - name: Build ISO
