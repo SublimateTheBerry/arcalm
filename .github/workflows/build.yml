@@ -66,20 +66,23 @@ jobs:
 
       - name: Prepare ISO config
         run: |
-          # Копируем базовую конфигурацию releng
           cp -r /usr/share/archiso/configs/releng /build/custom-archiso
           cd /build/custom-archiso
 
-          # Замена брендинга
           find . -type f -exec sed -i \
             -e 's/Arch Linux/Arcalm Linux/g' \
             -e 's/archlinux/arcalm/g' \
             -e 's/ARCH_/ARCALM_/g' {} \;
 
-          # Добавление пакетов
           echo -e "calamares\nqt5-xmlpatterns\nkpmcore\nxorg-xinit\nsddm\nplasma-meta\nkde-applications-meta\nnetworkmanager\ngrub\nefibootmgr\nxdg-desktop-portal-kde" >> packages.x86_64
 
-          # Копирование конфигов Calamares
+          echo "[core]
+          Include = /etc/pacman.d/mirrorlist
+          [extra]
+          Include = /etc/pacman.d/mirrorlist
+          [community]
+          Include = /etc/pacman.d/mirrorlist" >> pacman.conf
+
           mkdir -p airootfs/etc/calamares
           if [ -d "/__w/arcalm/arcalm/calamares" ]; then
             cp -rv "/__w/arcalm/arcalm/calamares"/* airootfs/etc/calamares/
@@ -88,7 +91,6 @@ jobs:
             exit 1
           fi
 
-          # Копирование скрипта customize_airootfs.sh
           mkdir -p airootfs/root
           if [ -f "/__w/arcalm/arcalm/airootfs/root/customize_airootfs.sh" ]; then
             cp -v "/__w/arcalm/arcalm/airootfs/root/customize_airootfs.sh" airootfs/root/
@@ -97,26 +99,25 @@ jobs:
             echo "::warning::Customize script not found, skipping"
           fi
 
-          # Важно! Исправление путей для mkarchiso
           echo "MKISOFS_ARGS=\"-V ARCALM_$(date +%Y.%m.%d)\"" >> config.sh
 
-      - name: Build ISO
-        run: |
-          mkarchiso -v -w /work -o /out /build/custom-archiso
-          ISO_FILE=$(ls /out/*.iso)
-          echo "ISO_FILE=$ISO_FILE" >> $GITHUB_ENV
+            - name: Build ISO
+              run: |
+                mkarchiso -v -w /work -o /out /build/custom-archiso
+                ISO_FILE=$(ls /out/*.iso)
+                echo "ISO_FILE=$ISO_FILE" >> $GITHUB_ENV
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ needs.check-version.outputs.arch_version }}
-          name: "Arcalm Linux ${{ needs.check-version.outputs.arch_version }}"
-          body: "Custom Arch-based Linux with Calamares installer"
-          files: ${{ env.ISO_FILE }}
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            - name: Create Release
+              uses: softprops/action-gh-release@v1
+              with:
+                tag_name: ${{ needs.check-version.outputs.arch_version }}
+                name: "Arcalm Linux ${{ needs.check-version.outputs.arch_version }}"
+                body: "Custom Arch-based Linux with Calamares installer"
+                files: ${{ env.ISO_FILE }}
+                draft: false
+                prerelease: false
+              env:
+                GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Cleanup old releases
         if: success()
