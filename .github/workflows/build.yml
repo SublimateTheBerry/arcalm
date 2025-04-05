@@ -42,83 +42,82 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          lfs: false
-          fetch-depth: 0
 
-      - name: Verify repository structure
-        run: |
-          echo "Workspace content:"
-          ls -la .
-          echo "Calamares configs:"
-          ls -la calamares
-          echo "Checking paths:"
-          echo "Calamares directory: $(realpath calamares)"
-          echo "customize_airootfs.sh path: $(realpath airootfs/root/customize_airootfs.sh)"
-
-      - name: Setup environment
+      - name: Install dependencies
         run: |
           pacman -Syu --noconfirm
-          pacman -S --noconfirm archiso base-devel git reflector rsync sudo jq
+          pacman -S --noconfirm base-devel git archiso sudo rsync reflector jq
+
           useradd -m -G wheel builduser
           echo 'builduser ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
-          mkdir -p /build /work /out
-          chown -R builduser:builduser /build /work /out
+          mkdir -p /build /work /out /aurbuild
+          chown -R builduser:builduser /build /work /out /aurbuild
 
-      - name: Prepare ISO config
+      - name: Build Calamares from AUR
         run: |
-          sudo sh -c '
-            cp -r /usr/share/archiso/configs/releng /build/custom-archiso
-            chown -R builduser:builduser /build/custom-archiso
-            cd /build/custom-archiso
-
-            sed -i -e '/^\[community\]/,/^$/ s/^#//' pacman.conf
-
-            echo "Checking pacman.conf syntax..."
-            pacman-conf --config pacman.conf --repo community || { echo "Invalid [community] section in pacman.conf"; exit 1; }
-
-            # Update mirrorlist for the custom profile
-            reflector --latest 20 --sort rate --protocol http,https --save /build/custom-archiso/airootfs/etc/pacman.d/mirrorlist
-            pacman -Syu --noconfirm
+          sudo -u builduser bash -c '
+            cd /aurbuild
+            git clone https://aur.archlinux.org/calamares.git
+            cd calamares
+            makepkg -si --noconfirm --needed
           '
 
-          sudo -u builduser sh -c '
+      - name: Create local Pacman repo with Calamares
+        run: |
+          mkdir -p /localrepo
+          cp /aurbuild/calamares/*.pkg.tar.zst /localrepo/
+          repo-add /localrepo/custom.db.tar.gz /localrepo/*.pkg.tar.zst
+
+      - name: Prepare ISO build
+        run: |
+          cp -r /usr/share/archiso/configs/releng /build/custom-archiso
+          chown -R builduser:builduser /build/custom-archiso
+
+          # Add local repo to pacman.conf
+          echo -e '\n[custom]\nSigLevel = Optional TrustAll\nServer = file:///localrepo' >> /build/custom-archiso/pacman.conf
+
+          reflector --latest 20 --sort rate --protocol http,https --save /build/custom-archiso/airootfs/etc/pacman.d/mirrorlist
+
+          # Add Calamares and KDE apps
+          echo "
+          calamares
+          qt5-xmlpatterns
+          kpmcore
+          plasma-meta
+          kde-applications
+          networkmanager
+          grub
+          efibootmgr
+          xdg-desktop-portal-kde
+          " >> /build/custom-archiso/packages.x86_64
+
+      - name: Add branding and customization
+        run: |
+          sudo -u builduser bash -c '
             cd /build/custom-archiso
-            
-            # Replace branding
+
+            # Замена названия дистрибутива
             find . -type f -exec sed -i -e "s/Arch Linux/Arcalm Linux/g" {} \;
             find . -type f -exec sed -i -e "s/archlinux/arcalm/g" {} \;
             find . -type f -exec sed -i -e "s/ARCH_/ARCALM_/g" {} \;
-            
-            # Add packages (ensure community repo is enabled in pacman.conf)
-            echo "calamares" >> packages.x86_64
-            echo "qt5-xmlpatterns" >> packages.x86_64
-            echo "kpmcore" >> packages.x86_64
-            echo "plasma-meta" >> packages.x86_64
-            echo "kde-applications" >> packages.x86_64
-            echo "networkmanager" >> packages.x86_64
-            echo "grub" >> packages.x86_64
-            echo "efibootmgr" >> packages.x86_64
-            echo "xdg-desktop-portal-kde" >> packages.x86_64
-            
-            # Copy Calamares configs
+
+            # Копирование Calamares-конфигов
             mkdir -p airootfs/etc/calamares
-            cp -rv "/__w/arcalm/arcalm/calamares"/* airootfs/etc/calamares/ || { echo "Calamares config not found"; exit 1; }
-            
-            # Add customization script
+            cp -rv /__w/arcalm/arcalm/calamares/* airootfs/etc/calamares/
+
+            # Добавление скрипта кастомизации
             mkdir -p airootfs/root
-            cp -v "/__w/arcalm/arcalm/airootfs/root/customize_airootfs.sh" airootfs/root/ || true
+            cp -v /__w/arcalm/arcalm/airootfs/root/customize_airootfs.sh airootfs/root/ || true
             chmod +x airootfs/root/customize_airootfs.sh
-            
-            # ISO configuration
+
+            # Изменение имени ISO
             echo "MKISOFS_ARGS=\"-V ARCALM_$(date +%Y%m%d)\"" >> config.sh
           '
 
       - name: Build ISO
         run: |
-          sudo mkarchiso -v -w /work -o /out /build/custom-archiso
-          ISO_FILE=$(ls /out/*.iso)
-          echo "ISO_FILE=$ISO_FILE" >> $GITHUB_ENV
+          mkarchiso -v -w /work -o /out /build/custom-archiso
+          echo "ISO_FILE=$(ls /out/*.iso)" >> $GITHUB_ENV
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
