@@ -72,7 +72,7 @@ jobs:
             chown -R builduser:builduser /build/custom-archiso
             cd /build/custom-archiso
 
-            sed -i -e 's|^#\[community\]|\[community\]|' -e '/\[community\]/,/^$/ s|^#||' pacman.conf
+            sed -i -e '/^\[community\]/,/^$/ s/^#//' pacman.conf
 
             echo "Checking pacman.conf syntax..."
             pacman-conf --config pacman.conf --repo community || { echo "Invalid [community] section in pacman.conf"; exit 1; }
