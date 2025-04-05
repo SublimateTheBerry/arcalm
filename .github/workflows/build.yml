@@ -36,7 +36,7 @@ jobs:
       - name: Clone Calamares and build it
         run: |
           # Use official release tag instead of non-existent branch
-          git clone --depth 1 --branch v3.3.4.2 https://github.com/calamares/calamares.git /home/builduser/calamares
+          git clone https://github.com/calamares/calamares.git /home/builduser/calamares
           chown -R builduser:builduser /home/builduser/calamares
           sudo -u builduser bash -c '
             cd /home/builduser/calamares && mkdir -p build && cd build
@@ -44,7 +44,7 @@ jobs:
             make -j$(nproc)
             sudo make install
           '
-          
+
       - name: Prepare ISO build environment
         run: |
           cp -r /usr/share/archiso/configs/releng/ arcalmiso
