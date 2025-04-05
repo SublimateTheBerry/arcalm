@@ -48,17 +48,16 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Clone Calamares and build it
+      - name: Install yay and Calamares from AUR
         run: |
-          git clone --depth 1 --branch 3.2.x-stable https://github.com/calamares/calamares.git /home/builduser/calamares
-          chown -R builduser:builduser /home/builduser/calamares
           sudo -u builduser bash -c '
-            cd /home/builduser/calamares && mkdir -p build && cd build
-            cmake .. -DCMAKE_INSTALL_PREFIX=/usr
-            make -j$(nproc)
-            sudo make install
+            cd /home/builduser
+            git clone https://aur.archlinux.org/yay.git
+            cd yay
+            makepkg -si --noconfirm
+            yay -S --noconfirm calamares
           '
-
+          
       - name: Prepare ISO build environment
         run: |
           cp -r /usr/share/archiso/configs/releng/ arcalmiso
