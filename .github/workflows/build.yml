@@ -50,9 +50,9 @@ jobs:
 
       - name: Download and Install console-setup
         run: |
-          wget http://mirror.math.princeton.edu/pub/kali/pool/main/c/console-setup/console-setup_1.234.tar.xz -P /tmp
+          wget https://ftp.dk.xemacs.org/kali/pool/main/c/console-setup/console-setup_1.234.tar.xz -P /tmp
           tar -xvf /tmp/console-setup_1.234.tar.xz -C /tmp
-          cd /tmp/console-setup-1.234/console-setup_1.234
+          cd /tmp/console-setup-1.234
           sudo make install
 
       - name: Install yay and Calamares from AUR
