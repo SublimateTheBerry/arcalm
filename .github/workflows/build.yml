@@ -72,10 +72,10 @@ jobs:
             chown -R builduser:builduser /build/custom-archiso
             cd /build/custom-archiso
 
-            sed -i '/\[community\]/,/Include/s/^#//' pacman.conf
+            sed -i 's|^#\s*\[community\]|[community|; s|^#\s*Include|Include|' pacman.conf
 
             # Update mirrorlist for the custom profile
-            reflector --latest 20 --sort rate --protocol https --save /build/custom-archiso/airootfs/etc/pacman.d/mirrorlist
+            reflector --latest 20 --sort rate --protocol http,https --save /build/custom-archiso/airootfs/etc/pacman.d/mirrorlist
             pacman -Syu --noconfirm
           '
 
