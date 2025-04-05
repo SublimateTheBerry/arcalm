@@ -17,7 +17,7 @@ jobs:
         run: |
           curl -sL https://mirrors.edge.kernel.org/archlinux/iso/latest/sha256sums.txt -o sha256sums.txt
           ISO_NAME=$(grep -oP 'archlinux-\K\d{4}\.\d{2}\.\d{2}(?=-x86_64.iso)' sha256sums.txt | head -1)
-          echo "version=$ISO_NAME" >> $GITHUB_OUTPUT
+          echo "version=${ISO_NAME}" >> $GITHUB_OUTPUT
 
       - name: Check releases
         id: check
@@ -26,12 +26,10 @@ jobs:
           LATEST_RELEASE_TAG=$(jq -r .tag_name <<< "$API_RESPONSE")
           CURRENT_VERSION="${{ steps.get_version.outputs.version }}"
 
-          if [[ "$LATEST_RELEASE_TAG" != "$CURRENT_VERSION" ]] || [[ "$API_RESPONSE" == 'null' ]]; then
+          if [[ "$API_RESPONSE" == 'null' ]] || [[ "$LATEST_RELEASE_TAG" != "$CURRENT_VERSION" ]]; then
             echo "new_version=true" >> $GITHUB_OUTPUT
-            echo "::notice::New version detected: $CURRENT_VERSION"
           else
             echo "new_version=false" >> $GITHUB_OUTPUT
-            echo "::notice::No new version available"
           fi
 
   build-and-release:
@@ -45,6 +43,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          lfs: false
           fetch-depth: 0
 
       - name: Verify repository structure
@@ -60,69 +59,61 @@ jobs:
       - name: Setup environment
         run: |
           pacman -Syu --noconfirm
-          pacman -S --noconfirm archiso sudo git base-devel jq reflector edk2-ovmf
+          pacman -S --noconfirm archiso base-devel reflector rsync git jq sudo
           useradd -m builduser
           mkdir -p /build /work /out
           chown -R builduser:builduser /build /work /out
-          echo 'Server = https://mirrors.kernel.org/archlinux/$repo/os/$arch' >> /etc/pacman.d/mirrorlist
 
       - name: Prepare ISO config
         run: |
-          cp -r /usr/share/archiso/configs/releng /build/custom-archiso
-          cd /build/custom-archiso
-
-          # Настройка репозиториев
-          echo "[core]
-CompressXZ = true
-CleanMethod = KeepCurrent
-" > pacman.conf
-
-          echo "[multilib]
-Include = /etc/pacman.d/mirrorlist" >> pacman.conf
-
-          echo "[extra]
-Include = /etc/pacman.d/mirrorlist" >> pacman.conf
-
-          echo "[community]
-Include = /etc/pacman.d/mirrorlist" >> pacman.conf
-
-          # Генерация mirrorlist
-          reflector --latest 20 --sort rate --protocol https --save /etc/pacman.d/mirrorlist
-          echo "::notice::Generated mirrorlist with top 20 mirrors"
-
-          # Замена брендинга
-          find . -type f -exec sed -i \
-            -e 's/Arch Linux/Arcalm Linux/g' \
-            -e 's/archlinux/arcalm/g' \
-            -e 's/ARCH_/ARCALM_/g' {} \;
-
-          # Добавление пакетов
-          echo -e "calamares\nqt5-xmlpatterns\nkpmcore\nxorg-xinit\nsddm\nplasma-meta\nkde-applications-meta\nnetworkmanager\ngrub\nefibootmgr\nxdg-desktop-portal-kde\ncalamares-settings\npartition\nwelcome\nuser\nkeymap" >> packages.x86_64
-
-          # Копирование конфигов Calamares
-          mkdir -p airootfs/etc/calamares
-          cp -rv "/__w/arcalm/arcalm/calamares"/* airootfs/etc/calamares/ || { echo "::error::Missing Calamares config directory!"; exit 1; }
-
-          # Копирование скрипта
-          mkdir -p airootfs/root
-          cp -v "/__w/arcalm/arcalm/airootfs/root/customize_airootfs.sh" airootfs/root/ || echo "::warning::Customize script not found, skipping"
-          chmod +x airootfs/root/customize_airootfs.sh
-
-          # Настройка метки ISO
-          echo "MKISOFS_ARGS=\"-V ARCALM_$(${DATE:+date +%Y.%m.%d})\"" >> config.sh
+          sudo -u builduser sh -c '
+            cp -r /usr/share/archiso/configs/releng /build/custom-archiso
+            cd /build/custom-archiso
+            
+            # Обновление зеркал
+            reflector --country Russia --latest 10 --sort rate --save /etc/pacman.d/mirrorlist
+            
+            # Замена брендинга
+            find . -type f -exec sed -i -e "s/Arch Linux/Arcalm Linux/g" {} \;
+            find . -type f -exec sed -i -e "s/archlinux/arcalm/g" {} \;
+            find . -type f -exec sed -i -e "s/ARCH_/ARCALM_/g" {} \;
+            
+            # Добавление пакетов
+            echo "calamares" >> packages.x86_64
+            echo "qt5-xmlpatterns" >> packages.x86_64
+            echo "kpmcore" >> packages.x86_64
+            echo "plasma-meta" >> packages.x86_64
+            echo "kde-applications" >> packages.x86_64
+            echo "networkmanager" >> packages.x86_64
+            echo "grub" >> packages.x86_64
+            echo "efibootmgr" >> packages.x86_64
+            echo "xdg-desktop-portal-kde" >> packages.x86_64
+            
+            # Копирование конфигов
+            mkdir -p airootfs/etc/calamares
+            cp -rv "/__w/arcalm/arcalm/calamares"/* airootfs/etc/calamares/ || { echo "Calamares config not found"; exit 1; }
+            
+            # Кастомный скрипт
+            mkdir -p airootfs/root
+            cp -v "/__w/arcalm/arcalm/airootfs/root/customize_airootfs.sh" airootfs/root/ || true
+            chmod +x airootfs/root/customize_airootfs.sh
+            
+            # Настройка ISO
+            echo "MKISOFS_ARGS=\"-V ARCALM_$(date +%Y%m%d)\"" >> config.sh
+          '
 
       - name: Build ISO
         run: |
-          mkarchiso -v -w /work -o /out /build/custom-archiso
+          sudo -u builduser mkarchiso -v -w /work -o /out /build/custom-archiso
           ISO_FILE=$(ls /out/*.iso)
           echo "ISO_FILE=$ISO_FILE" >> $GITHUB_ENV
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ needs.check-version.outputs.arch_version }}
+          tag_name: "v${{ needs.check-version.outputs.arch_version }}"
           name: "Arcalm Linux ${{ needs.check-version.outputs.arch_version }}"
-          body: "Custom Arch-based Linux with Calamares installer"
+          body: "Custom Arch-based Linux with Calamares installer\n\nBuilt with Plasma Desktop and KDE Applications"
           files: ${{ env.ISO_FILE }}
           draft: false
           prerelease: false
