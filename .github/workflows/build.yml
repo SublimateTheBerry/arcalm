@@ -69,29 +69,29 @@ jobs:
         run: |
           sudo sh -c '
             cp -r /usr/share/archiso/configs/releng /build/custom-archiso
+            # CHOWN to builduser here
+            chown -R builduser:builduser /build/custom-archiso
             cd /build/custom-archiso
             
-            # Добавление репозитория extra
+            # Add extra repository
             echo "[extra]" >> /etc/pacman.conf
             echo "Include = /etc/pacman.d/mirrorlist" >> /etc/pacman.conf
             
-            # Обновление баз пакетов
+            # Sync and update mirrors
             pacman -Sy --noconfirm
-            
-            # Обновление зеркал
             reflector --country Russia --latest 10 --sort rate --save /etc/pacman.d/mirrorlist
           '
           
-          # Остальные настройки от пользователя builduser
+          # Continue as builduser with proper permissions
           sudo -u builduser sh -c '
             cd /build/custom-archiso
             
-            # Замена брендинга
+            # Replace branding
             find . -type f -exec sed -i -e "s/Arch Linux/Arcalm Linux/g" {} \;
             find . -type f -exec sed -i -e "s/archlinux/arcalm/g" {} \;
             find . -type f -exec sed -i -e "s/ARCH_/ARCALM_/g" {} \;
             
-            # Добавление пакетов
+            # Add packages
             echo "calamares" >> packages.x86_64
             echo "qt5-xmlpatterns" >> packages.x86_64
             echo "kpmcore" >> packages.x86_64
@@ -102,16 +102,16 @@ jobs:
             echo "efibootmgr" >> packages.x86_64
             echo "xdg-desktop-portal-kde" >> packages.x86_64
             
-            # Копирование конфигов Calamares
+            # Copy Calamares configs
             mkdir -p airootfs/etc/calamares
             cp -rv "/__w/arcalm/arcalm/calamares"/* airootfs/etc/calamares/ || { echo "Calamares config not found"; exit 1; }
             
-            # Добавление скрипта
+            # Add customization script
             mkdir -p airootfs/root
             cp -v "/__w/arcalm/arcalm/airootfs/root/customize_airootfs.sh" airootfs/root/ || true
             chmod +x airootfs/root/customize_airootfs.sh
             
-            # Настройка ISO
+            # ISO configuration
             echo "MKISOFS_ARGS=\"-V ARCALM_$(date +%Y%m%d)\"" >> config.sh
           '
 
