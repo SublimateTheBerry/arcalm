@@ -59,8 +59,8 @@ jobs:
       - name: Setup environment
         run: |
           pacman -Syu --noconfirm
-          pacman -S --noconfirm archiso base-devel reflector rsync git jq sudo
-          useradd -m builduser
+          pacman -S --noconfirm archiso base-devel git reflector rsync sudo jq
+          useradd -m -G wheel builduser
           mkdir -p /build /work /out
           chown -R builduser:builduser /build /work /out
 
@@ -72,6 +72,10 @@ jobs:
             
             # Обновление зеркал
             reflector --country Russia --latest 10 --sort rate --save /etc/pacman.d/mirrorlist
+            
+            # Добавление extra в pacman.conf
+            echo "[extra]" >> /etc/pacman.conf
+            echo "Include = /etc/pacman.d/mirrorlist" >> /etc/pacman.conf
             
             # Замена брендинга
             find . -type f -exec sed -i -e "s/Arch Linux/Arcalm Linux/g" {} \;
@@ -104,7 +108,7 @@ jobs:
 
       - name: Build ISO
         run: |
-          sudo -u builduser mkarchiso -v -w /work -o /out /build/custom-archiso
+          sudo mkarchiso -v -w /work -o /out /build/custom-archiso
           ISO_FILE=$(ls /out/*.iso)
           echo "ISO_FILE=$ISO_FILE" >> $GITHUB_ENV
 
