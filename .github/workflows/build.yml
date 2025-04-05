@@ -78,8 +78,8 @@ jobs:
 
         # Copy Calamares configs
         mkdir -p airootfs/etc/calamares
-        if [ -d "/github/workspace/calamares" ]; then
-          cp -rv /github/workspace/calamares/* airootfs/etc/calamares/
+        if [ -d "calamares" ]; then
+          cp -rv calamares/* airootfs/etc/calamares/
         else
           echo "::error::Missing Calamares config directory!"
           exit 1
