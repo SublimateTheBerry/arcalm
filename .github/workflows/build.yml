@@ -46,15 +46,14 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
-        ref: main
+        fetch-depth: 0
 
     - name: Verify repository structure
       run: |
-        echo "Current directory: $(pwd)"
-        echo "Repository content:"
-        ls -la /__w/${{ github.repository }}
-        echo "Calamares directory content:"
-        ls -la /__w/${{ github.repository }}/calamares
+        echo "Workspace content:"
+        ls -la /github/workspace
+        echo "Calamares configs:"
+        ls -la /github/workspace/calamares
 
     - name: Setup environment
       run: |
@@ -68,17 +67,32 @@ jobs:
         cp -r /usr/share/archiso/configs/releng /build/custom-archiso
         cd /build/custom-archiso
 
-        # Branding replacement
-        find . -type f -exec sed -i 's/Arch Linux/Arcalm Linux/g;s/archlinux/arcalm/g;s/ARCH_/ARCALM_/g' {} \;
+        # Replace branding
+        find . -type f -exec sed -i \
+          -e 's/Arch Linux/Arcalm Linux/g' \
+          -e 's/archlinux/arcalm/g' \
+          -e 's/ARCH_/ARCALM_/g' {} \;
 
-        # Add packages
+        # Add required packages
         echo -e "calamares\nqt5-xmlpatterns\nkpmcore\nxorg-xinit\nsddm\nplasma-meta\nkde-applications-meta\nnetworkmanager\ngrub\nefibootmgr" >> packages.x86_64
 
-        # Copy configurations
+        # Copy Calamares configs
         mkdir -p airootfs/etc/calamares
-        cp -r /__w/${{ github.repository }}/calamares/* airootfs/etc/calamares/ || (echo "Calamares files not found!"; exit 1)
-        cp /__w/${{ github.repository }}/airootfs/root/customize_airootfs.sh airootfs/root/ || (echo "customize_airootfs.sh not found!"; exit 1)
-        chmod +x airootfs/root/customize_airootfs.sh
+        if [ -d "/github/workspace/calamares" ]; then
+          cp -rv /github/workspace/calamares/* airootfs/etc/calamares/
+        else
+          echo "::error::Missing Calamares config directory!"
+          exit 1
+        fi
+
+        # Copy post-install script
+        mkdir -p airootfs/root
+        if [ -f "/github/workspace/airootfs/root/customize_airootfs.sh" ]; then
+          cp -v /github/workspace/airootfs/root/customize_airootfs.sh airootfs/root/
+          chmod +x airootfs/root/customize_airootfs.sh
+        else
+          echo "::warning::Customize script not found, skipping"
+        fi
 
     - name: Build ISO
       run: |
@@ -101,10 +115,12 @@ jobs:
     - name: Cleanup old releases
       if: success()
       run: |
-        releases=($(curl -sH "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-          "https://api.github.com/repos/${{ github.repository }}/releases?per_page=100" | jq -r '.[].id'))
+        mapfile -t releases < <(curl -sH "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          "https://api.github.com/repos/${{ github.repository }}/releases?per_page=100" | jq -r '.[].id')
         
-        for release_id in "${releases[@]:3}"; do
-          curl -X DELETE -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/releases/$release_id"
-        done
+        if [ "${#releases[@]}" -gt 3 ]; then
+          for release_id in "${releases[@]:3}"; do
+            curl -X DELETE -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/releases/$release_id"
+          done
+        fi
